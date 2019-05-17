@@ -21,19 +21,30 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/julienschmidt/httprouter"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "comed_exporter",
-	Short: "exposes the comed hourly pricing as prometheus metrics",
-	Run:   start,
-}
+var (
+	applicationLogger = log.WithFields(log.Fields{"name": "comed_exporter"})
+
+	rootCmd = &cobra.Command{
+		Use:   "comed_exporter",
+		Short: "exposes the comed hourly pricing as prometheus metrics",
+		RunE:  start,
+	}
+)
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -61,8 +72,62 @@ func initConfig() {
 	viper.BindPFlag("schedule", rootCmd.Flags().Lookup("schedule"))
 }
 
-func start(cmd *cobra.Command, args []string) {
-	fmt.Printf("address: %s\n", viper.GetString("address"))
-	fmt.Printf("api: %s\n", viper.GetString("api"))
-	fmt.Printf("schedule: %s\n", viper.GetDuration("schedule"))
+func start(cmd *cobra.Command, args []string) error {
+	applicationLogger.Infoln("starting up")
+	ctx := setSignalCancel(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
+
+	srv := startServer(viper.GetString("address"))
+	go startQuerying(ctx, viper.GetString("api"), viper.GetDuration("schedule"))
+	applicationLogger.Infoln("started")
+
+	<-ctx.Done()
+
+	shutdownCtx, clean := context.WithTimeout(context.Background(), time.Second*5)
+	defer clean()
+
+	err := srv.Shutdown(shutdownCtx)
+	if err != nil {
+		return fmt.Errorf("error shutting down web server: %v", err)
+	}
+
+	applicationLogger.Infoln("done")
+	return nil
+
+}
+
+func startQuerying(ctx context.Context, api string, schedule time.Duration) {
+
+}
+
+func startServer(address string) *http.Server {
+	srv := &http.Server{Addr: address, Handler: endpoint()}
+	go func() {
+		err := srv.ListenAndServe()
+		if err != http.ErrServerClosed {
+			applicationLogger.WithFields(log.Fields{"err": err}).Fatalln("failed at serving")
+		}
+	}()
+
+	return srv
+}
+
+func endpoint() http.Handler {
+	router := httprouter.New()
+	router.Handler("GET", "/metrics", instrumentHandler("metrics", promhttp.Handler()))
+	return router
+}
+
+func setSignalCancel(ctx context.Context, sig ...os.Signal) context.Context {
+	ctx, cancel := context.WithCancel(ctx)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, sig...)
+
+	go func() {
+		<-sigChan
+		applicationLogger.WithFields(log.Fields{"signal": sig}).Println("received stop signal")
+		cancel()
+	}()
+
+	return ctx
 }
