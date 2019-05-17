@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/kklipsch/comed_exporter/api"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -59,7 +60,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.Flags().String("address", ":9010", "The address to return results on.")
-	rootCmd.Flags().String("api", "https://hourlypricing.comed.com/api", "The comed api endpoint")
+	rootCmd.Flags().String("api", api.Address, "The comed api endpoint")
 	rootCmd.Flags().Duration("schedule", time.Minute*5, "How often to query the api")
 }
 
