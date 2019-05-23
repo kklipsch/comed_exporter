@@ -50,7 +50,7 @@ func GetLastPrice(client *http.Client, address string) (Price, error) {
 		return Price{}, fmt.Errorf("no prices available: %s", b)
 	}
 
-	last := t[len(t)-1]
+	last := t[0]
 
 	millis, err := strconv.ParseInt(last.MillisUTC, 10, 64)
 	if err != nil {

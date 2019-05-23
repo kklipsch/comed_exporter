@@ -78,7 +78,19 @@ func start(cmd *cobra.Command, args []string) error {
 	ctx := setSignalCancel(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	srv := startServer(viper.GetString("address"))
-	go startQuerying(ctx, viper.GetString("api"), viper.GetDuration("schedule"))
+
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	var err error
+	client.Transport, err = instrumentClient("query", client.Transport)
+	if err != nil {
+		return err
+	}
+
+	go startQuerying(ctx, viper.GetString("api"), viper.GetDuration("schedule"), client)
+
 	applicationLogger.Infoln("started")
 
 	<-ctx.Done()
@@ -86,7 +98,7 @@ func start(cmd *cobra.Command, args []string) error {
 	shutdownCtx, clean := context.WithTimeout(context.Background(), time.Second*5)
 	defer clean()
 
-	err := srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
 	if err != nil {
 		return fmt.Errorf("error shutting down web server: %v", err)
 	}
@@ -96,8 +108,30 @@ func start(cmd *cobra.Command, args []string) error {
 
 }
 
-func startQuerying(ctx context.Context, api string, schedule time.Duration) {
+func startQuerying(ctx context.Context, address string, schedule time.Duration, client *http.Client) {
+	//do once on startup so you dont have to wait for the ticker
+	doQuery(client, address)
+	t := time.Tick(schedule)
 
+	for {
+		select {
+		case <-t:
+			doQuery(client, address)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func doQuery(client *http.Client, address string) {
+	price, err := api.GetLastPrice(client, address)
+	if err != nil {
+		errorsCount.Inc()
+		applicationLogger.WithField("err", err).Errorln("error querying api")
+		return
+	}
+
+	priceGuage.Set(price.CentsPerKWh)
 }
 
 func startServer(address string) *http.Server {
