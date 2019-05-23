@@ -17,14 +17,17 @@ type (
 
 	today []response
 
+	//Price is the results from the api endpoint
 	Price struct {
 		AsOf        time.Time
 		CentsPerKWh float64
 	}
 )
 
+//Address is where the API is located
 const Address = "https://hourlypricing.comed.com/api"
 
+//GetLastPrice returns the last price returned from the 5 minute feed
 func GetLastPrice(client *http.Client, address string) (Price, error) {
 	resp, err := client.Get(fmt.Sprintf("%s?type=5minutefeed", address))
 	if err != nil {
@@ -47,7 +50,7 @@ func GetLastPrice(client *http.Client, address string) (Price, error) {
 		return Price{}, fmt.Errorf("no prices available: %s", b)
 	}
 
-	last := t[len(t)-1]
+	last := t[0]
 
 	millis, err := strconv.ParseInt(last.MillisUTC, 10, 64)
 	if err != nil {

@@ -10,15 +10,13 @@ import (
 )
 
 var (
-	errorsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	errorsCount = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "errors",
 		Help: "Count of non-fatal errors",
-	},
-		[]string{"type"},
-	)
+	})
 
 	priceGuage = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "price",
+		Name: "price_per_kwh",
 		Help: "A gauge of the last seen price.",
 	})
 
